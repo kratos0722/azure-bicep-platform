@@ -4,15 +4,43 @@ param name string
 @description('Resource id of the App Service to monitor.')
 param siteId string
 
-@description('Threshold for server-side 5xx responses over the evaluation window.')
-param http5xxThreshold int = 10
+@description('Metric to evaluate, e.g. Http5xx or HttpResponseTime.')
+param metricName string = 'Http5xx'
 
-// Fires when the web app returns too many 5xx responses in a 5-minute window.
-resource http5xxAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+@description('Aggregation over the window: Total, Average, Maximum, etc.')
+param timeAggregation string = 'Total'
+
+@description('Comparison operator.')
+@allowed([
+  'GreaterThan'
+  'GreaterThanOrEqual'
+  'LessThan'
+  'LessThanOrEqual'
+])
+param operator string = 'GreaterThan'
+
+@description('Threshold the aggregated metric is compared against.')
+param threshold int = 10
+
+@description('Alert severity (0 = critical … 4 = verbose).')
+@minValue(0)
+@maxValue(4)
+param severity int = 2
+
+@description('Optional action group id to notify when the alert fires.')
+param actionGroupId string = ''
+
+var actions = empty(actionGroupId) ? [] : [
+  {
+    actionGroupId: actionGroupId
+  }
+]
+
+resource metricAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   name: name
   location: 'global'
   properties: {
-    severity: 2
+    severity: severity
     enabled: true
     scopes: [
       siteId
@@ -23,17 +51,18 @@ resource http5xxAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
       'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
       allOf: [
         {
-          name: 'Http5xx'
+          name: 'Metric1'
           metricNamespace: 'Microsoft.Web/sites'
-          metricName: 'Http5xx'
-          operator: 'GreaterThan'
-          threshold: http5xxThreshold
-          timeAggregation: 'Total'
+          metricName: metricName
+          operator: operator
+          threshold: threshold
+          timeAggregation: timeAggregation
           criterionType: 'StaticThresholdCriterion'
         }
       ]
     }
+    actions: actions
   }
 }
 
-output alertId string = http5xxAlert.id
+output alertId string = metricAlert.id

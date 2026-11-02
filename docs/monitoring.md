@@ -19,12 +19,16 @@ to collect request and dependency telemetry.
 
 ## Alerts
 
-Provisioned today:
+Provisioned today, both routed to an **action group** (`actionGroup.bicep`) that
+emails the on-call address so a firing alert actually notifies someone:
 
-- **HTTP 5xx** — fires when the web app returns more than 10 server errors in a
-  5-minute window (`alerts.bicep`, severity 2).
+- **HTTP 5xx** — more than 10 server errors in a 5-minute window
+  (`alerts.bicep`, severity 2).
+- **Response time** — average `HttpResponseTime` over 5 s in a 5-minute window
+  (severity 3).
 
-Recommended additions (same pattern, new `alerts.bicep` instances):
+Recommended additions (same pattern, new `alerts.bicep` instances wired to the
+same action group):
 
 - App Service **CPU > 80%** for 15 min.
 - Azure SQL **DTU/vCore > 85%** for 15 min.
