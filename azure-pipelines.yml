@@ -1,0 +1,95 @@
+# Azure DevOps pipeline: validate Bicep, deploy infrastructure, publish the DACPAC.
+# Mirrors the GitHub Actions validation gate but adds the ARM/SQL deploy stages
+# that run against a real Azure subscription via a service connection.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/*
+      - db/*
+      - azure-pipelines.yml
+
+variables:
+  azureServiceConnection: 'azure-saasplat'   # ARM service connection name
+  resourceGroup: 'rg-saasplat-dev'
+  location: 'southeastasia'
+  environmentName: 'dev'
+
+stages:
+  - stage: Validate
+    displayName: Validate IaC
+    jobs:
+      - job: Bicep
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: AzureCLI@2
+            displayName: Bicep build + what-if
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az bicep build --file infra/main.bicep
+                az deployment group what-if \
+                  --resource-group $(resourceGroup) \
+                  --template-file infra/main.bicep \
+                  --parameters infra/env/$(environmentName).bicepparam
+            env:
+              SQL_ADMIN_PASSWORD: $(sqlAdminPassword)   # secret pipeline variable
+
+  - stage: DeployInfra
+    displayName: Deploy infrastructure
+    dependsOn: Validate
+    jobs:
+      - deployment: DeployInfra
+        environment: $(environmentName)
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: AzureCLI@2
+                  displayName: az deployment group create
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az deployment group create \
+                        --resource-group $(resourceGroup) \
+                        --template-file infra/main.bicep \
+                        --parameters infra/env/$(environmentName).bicepparam
+                  env:
+                    SQL_ADMIN_PASSWORD: $(sqlAdminPassword)
+
+  - stage: DeployDatabase
+    displayName: Publish database (DACPAC)
+    dependsOn: DeployInfra
+    jobs:
+      - job: Dacpac
+        pool:
+          vmImage: 'windows-latest'
+        steps:
+          - task: DotNetCoreCLI@2
+            displayName: Build DACPAC
+            inputs:
+              command: build
+              projects: 'db/SaasDb.sqlproj'
+              arguments: '--configuration Release'
+          - task: SqlAzureDacpacDeployment@1
+            displayName: Publish DACPAC to Azure SQL
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              AuthenticationType: 'server'
+              ServerName: '$(sqlServerFqdn)'
+              DatabaseName: 'saasplatdb'
+              SqlUsername: '$(sqlAdminLogin)'
+              SqlPassword: '$(sqlAdminPassword)'
+              deployType: 'DacpacTask'
+              DacpacFile: 'db/bin/Release/SaasDb.dacpac'

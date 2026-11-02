@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  bicep:
+    name: Validate Bicep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Bicep
+        run: az bicep install && az bicep version
+      - name: Build main template
+        run: az bicep build --file infra/main.bicep
+      - name: Build parameter files
+        env:
+          SQL_ADMIN_PASSWORD: ci-validation-only-not-a-real-secret
+        run: |
+          az bicep build-params --file infra/env/dev.bicepparam
+          az bicep build-params --file infra/env/prod.bicepparam
+
+  dacpac:
+    name: Build DACPAC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build SQL project
+        run: dotnet build db/SaasDb.sqlproj --configuration Release
+      - name: Assert DACPAC was produced
+        run: |
+          found=$(find db -name 'SaasDb.dacpac' | head -n1)
+          if [ -z "$found" ]; then echo "DACPAC not found"; exit 1; fi
+          echo "Built $found"

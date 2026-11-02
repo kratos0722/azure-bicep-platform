@@ -1,0 +1,17 @@
+# Bicep build output
+*.json.tmp
+infra/**/*.json
+!infra/bicepconfig.json
+
+# SQL project build output
+db/bin/
+db/obj/
+*.dacpac
+
+# dotnet
+bin/
+obj/
+
+# local secrets / env
+.env
+*.env
