@@ -32,6 +32,9 @@ param sqlAdminLogin string
 @description('SQL administrator password (supply from a pipeline secret).')
 param sqlAdminPassword string
 
+@description('Email address that receives Azure Monitor alert notifications.')
+param notificationEmail string
+
 // A short, deterministic suffix keeps globally-unique names stable per RG.
 var suffix = uniqueString(resourceGroup().id)
 var baseName = '${namePrefix}-${environmentName}'
@@ -84,11 +87,39 @@ module keyVault 'modules/keyVault.bicep' = {
   }
 }
 
+module actionGroup 'modules/actionGroup.bicep' = {
+  name: 'actionGroup'
+  params: {
+    name: '${baseName}-ag'
+    shortName: take('${namePrefix}ops', 12)
+    notificationEmail: notificationEmail
+  }
+}
+
 module http5xxAlert 'modules/alerts.bicep' = {
   name: 'http5xxAlert'
   params: {
     name: '${baseName}-http5xx'
     siteId: appService.outputs.siteId
+    metricName: 'Http5xx'
+    timeAggregation: 'Total'
+    threshold: 10
+    severity: 2
+    actionGroupId: actionGroup.outputs.id
+  }
+}
+
+module responseTimeAlert 'modules/alerts.bicep' = {
+  name: 'responseTimeAlert'
+  params: {
+    name: '${baseName}-response-time'
+    siteId: appService.outputs.siteId
+    metricName: 'HttpResponseTime'
+    timeAggregation: 'Average'
+    operator: 'GreaterThan'
+    threshold: 5
+    severity: 3
+    actionGroupId: actionGroup.outputs.id
   }
 }
 
